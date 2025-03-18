@@ -38,7 +38,7 @@ def create_gui():
     label = tk.Label(root, text="Выберите упражнение:", font=("Arial", 14))
     label.pack(pady=20)
 
-    button_bicep_curl = tk.Button(root, text="Бицепсовые сгибания", width=30, height=2, command=lambda: set_exercise("1"))
+    button_bicep_curl = tk.Button(root, text="Упрожнение на бицепс", width=30, height=2, command=lambda: set_exercise("1"))
     button_bicep_curl.pack(pady=10)
 
     button_squat = tk.Button(root, text="Приседания", width=30, height=2, command=lambda: set_exercise("2"))

@@ -6,7 +6,11 @@ import mediapipe as mp
 mp_pose = mp.solutions.pose
 pose = mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5)
 
-progress = 0  # Прогресс выполнения упражнения
+progress_squat = 0  # Прогресс приседаний
+progress_curl_right = 0  # Прогресс сгибаний для правой руки
+progress_curl_left = 0  # Прогресс сгибаний для левой руки
+progress_raise_right = 0  # Прогресс махов для правой руки
+progress_raise_left = 0  # Прогресс махов для левой руки
 
 
 def calculate_angle(a, b, c):
@@ -16,52 +20,81 @@ def calculate_angle(a, b, c):
     return 360 - angle if angle > 180 else angle
 
 
-def draw_progress_bar(frame, progress, x, y, width=300, height=20):
+def draw_vertical_progress_bar(frame, progress, x, y, width=20, height=200):
+    """Рисует вертикальный прогресс-бар."""
     cv.rectangle(frame, (x, y), (x + width, y + height), (255, 255, 255), 2)  # Граница
-    cv.rectangle(frame, (x, y), (x + int(width * (progress / 100)), y + height), (0, 255, 0), -1)  # Заполнение
+    fill_height = int(height * (progress / 100))
+    cv.rectangle(frame, (x, y + height - fill_height), (x + width, y + height), (0, 255, 0), -1)  # Заполнение
 
 
 def track_squats(frame, landmarks):
-    global progress
+    """Отслеживание приседаний с прогресс-баром."""
+    global progress_squat
 
-    if landmarks[mp_pose.PoseLandmark.RIGHT_HIP] and landmarks[mp_pose.PoseLandmark.RIGHT_KNEE] and landmarks[
-        mp_pose.PoseLandmark.RIGHT_ANKLE]:
+    if landmarks[mp_pose.PoseLandmark.RIGHT_HIP] and landmarks[mp_pose.PoseLandmark.RIGHT_KNEE] and landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE]:
         hip = [landmarks[mp_pose.PoseLandmark.RIGHT_HIP].x, landmarks[mp_pose.PoseLandmark.RIGHT_HIP].y]
         knee = [landmarks[mp_pose.PoseLandmark.RIGHT_KNEE].x, landmarks[mp_pose.PoseLandmark.RIGHT_KNEE].y]
         ankle = [landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE].x, landmarks[mp_pose.PoseLandmark.RIGHT_ANKLE].y]
         angle = calculate_angle(hip, knee, ankle)
 
-        progress = max(0, min(100, int(100 - (angle - 90) * (100 / 70)))) if 90 <= angle < 160 else (
-            100 if angle <= 90 else 0)
+        if angle <= 80:
+            progress_squat = 100
+        elif angle >= 170:
+            progress_squat = 0
+        else:
+            progress_squat = int(100 - ((angle - 80) * (100 / (170 - 80))))  # Линейная интерполяция
 
-    draw_progress_bar(frame, progress, 50, 50)
-
+    draw_vertical_progress_bar(frame, progress_squat, 50, 50)
 
 def track_bicep_curls(frame, landmarks):
-    global progress
+    """Отслеживание бицепсовых сгибаний для обеих рук."""
+    global progress_curl_right, progress_curl_left
 
-    if landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER] and landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW] and landmarks[
-        mp_pose.PoseLandmark.RIGHT_WRIST]:
+    # Правая рука
+    if landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER] and landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW] and landmarks[mp_pose.PoseLandmark.RIGHT_WRIST]:
         shoulder = [landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER].x, landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER].y]
         elbow = [landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW].x, landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW].y]
         wrist = [landmarks[mp_pose.PoseLandmark.RIGHT_WRIST].x, landmarks[mp_pose.PoseLandmark.RIGHT_WRIST].y]
         angle = calculate_angle(shoulder, elbow, wrist)
 
-        progress = max(0, min(100, int(100 - (angle - 90) * (100 / 90)))) if 90 <= angle < 180 else (
+        progress_curl_right = max(0, min(100, int(100 - (angle - 90) * (100 / 90)))) if 90 <= angle < 180 else (
             100 if angle <= 90 else 0)
 
-    draw_progress_bar(frame, progress, 50, 100)
+    # Левая рука
+    if landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER] and landmarks[mp_pose.PoseLandmark.LEFT_ELBOW] and landmarks[mp_pose.PoseLandmark.LEFT_WRIST]:
+        shoulder = [landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER].x, landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER].y]
+        elbow = [landmarks[mp_pose.PoseLandmark.LEFT_ELBOW].x, landmarks[mp_pose.PoseLandmark.LEFT_ELBOW].y]
+        wrist = [landmarks[mp_pose.PoseLandmark.LEFT_WRIST].x, landmarks[mp_pose.PoseLandmark.LEFT_WRIST].y]
+        angle = calculate_angle(shoulder, elbow, wrist)
+
+        progress_curl_left = max(0, min(100, int(100 - (angle - 90) * (100 / 90)))) if 90 <= angle < 180 else (
+            100 if angle <= 90 else 0)
+
+    draw_vertical_progress_bar(frame, progress_curl_right, 100, 50)
+    draw_vertical_progress_bar(frame, progress_curl_left, 130, 50)
 
 
 def track_lateral_raises(frame, landmarks):
-    global progress
+    """Отслеживание махов гантелями для обеих рук."""
+    global progress_raise_right, progress_raise_left
 
+    # Правая рука
     if landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER] and landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW]:
         shoulder = [landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER].x, landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER].y]
         elbow = [landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW].x, landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW].y]
         hip = [landmarks[mp_pose.PoseLandmark.RIGHT_HIP].x, landmarks[mp_pose.PoseLandmark.RIGHT_HIP].y]
         angle = calculate_angle(hip, shoulder, elbow)
 
-        progress = int((angle / 90) * 100) if 0 <= angle <= 90 else 0
+        progress_raise_right = int((angle / 90) * 100) if 0 <= angle <= 90 else 0
 
-    draw_progress_bar(frame, progress, 50, 150)
+    # Левая рука
+    if landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER] and landmarks[mp_pose.PoseLandmark.LEFT_ELBOW]:
+        shoulder = [landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER].x, landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER].y]
+        elbow = [landmarks[mp_pose.PoseLandmark.LEFT_ELBOW].x, landmarks[mp_pose.PoseLandmark.LEFT_ELBOW].y]
+        hip = [landmarks[mp_pose.PoseLandmark.LEFT_HIP].x, landmarks[mp_pose.PoseLandmark.LEFT_HIP].y]
+        angle = calculate_angle(hip, shoulder, elbow)
+
+        progress_raise_left = int((angle / 90) * 100) if 0 <= angle <= 90 else 0
+
+    draw_vertical_progress_bar(frame, progress_raise_right, 180, 50)
+    draw_vertical_progress_bar(frame, progress_raise_left, 210, 50)
