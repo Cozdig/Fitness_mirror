@@ -1,7 +1,30 @@
+from datetime import time
+import threading
+from playsound import playsound
 import cv2 as cv
 import numpy as np
 import mediapipe as mp
 from collections import deque
+
+def play_beep():
+    threading.Thread(target=playsound, args=("beep.mp3",), daemon=True).start()
+
+# Фильтр для сглаживания прогресса (чтобы полоска не прыгала)
+class SmoothingFilter:
+    def __init__(self, alpha=0.2):
+        self.alpha = alpha
+        self.value = None
+
+    def update(self, new_value):
+        if self.value is None:
+            self.value = new_value
+        else:
+            self.value = self.alpha * new_value + (1 - self.alpha) * self.value
+        return int(self.value)
+
+# Создаём фильтры для сглаживания прогресс-бара
+smooth_left = SmoothingFilter(alpha=0.2)
+smooth_right = SmoothingFilter(alpha=0.2)
 
 # Инициализация MediaPipe для отслеживания позы
 mp_pose = mp.solutions.pose
@@ -79,50 +102,65 @@ def track_squats(frame, landmarks):
     elif squat_completed and progress_left <= 15 and progress_right <= 15:
         squat_counter += 1
         squat_completed = False
+        play_beep()
 
     # Рисуем прогресс-бары
     draw_vertical_progress_bar(frame, progress_left, frame.shape[1] - 50, 50)  # Слева
     draw_vertical_progress_bar(frame, progress_right, 30, 50)  # Справа
     draw_counter(frame, squat_counter, frame.shape[1] // 2 - 50, 50)
 
+
+# Обновляем пределы углов для бицепсовых сгибаний
+MIN_ANGLE = 70  # 100% прогресса
+MAX_ANGLE = 160  # 0% прогресса
+
 def track_bicep_curls(frame, landmarks):
-    """Отслеживание бицепсовых сгибаний."""
+    """Отслеживание бицепсовых сгибаний с плавным прогресс-баром."""
     global curl_counter, curl_completed
 
-    def get_bicep_progress(shoulder, elbow, wrist):
-        """Вычисляет прогресс сгибания на основе угла между плечом и предплечьем."""
-        angle = calculate_angle(shoulder, elbow, wrist)  # Угол сгибания руки
-        return max(0, min(100, int(100 - (angle - 110) * (100 / (180 - 110)))))  # 110° - согнуто, 180° - разогнуто
-
-    progress_right, progress_left = 0, 0
+    progress_left, progress_right = 0, 0
 
     # Правая рука
-    if all(landmarks[pt] for pt in [mp_pose.PoseLandmark.RIGHT_SHOULDER, mp_pose.PoseLandmark.RIGHT_ELBOW, mp_pose.PoseLandmark.RIGHT_WRIST]):
+    if landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER] and \
+            landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW] and \
+            landmarks[mp_pose.PoseLandmark.RIGHT_WRIST]:
         shoulder = [landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER].x, landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER].y]
         elbow = [landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW].x, landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW].y]
         wrist = [landmarks[mp_pose.PoseLandmark.RIGHT_WRIST].x, landmarks[mp_pose.PoseLandmark.RIGHT_WRIST].y]
-        progress_right = smooth_progress(progress_curl_right_buffer, get_bicep_progress(shoulder, elbow, wrist))
+
+        angle = calculate_angle(shoulder, elbow, wrist)
+
+        # Обновленный прогресс: 100% при 70°, 0% при 160°
+        progress_right = np.clip(int(100 - (angle - MIN_ANGLE) * (100 / (MAX_ANGLE - MIN_ANGLE))), 0, 100)
+        smoothed_progress_right = smooth_right.update(progress_right)
+        draw_vertical_progress_bar(frame, smoothed_progress_right, 30, 50)  # Справа
 
     # Левая рука
-    if all(landmarks[pt] for pt in [mp_pose.PoseLandmark.LEFT_SHOULDER, mp_pose.PoseLandmark.LEFT_ELBOW, mp_pose.PoseLandmark.LEFT_WRIST]):
+    if landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER] and \
+            landmarks[mp_pose.PoseLandmark.LEFT_ELBOW] and \
+            landmarks[mp_pose.PoseLandmark.LEFT_WRIST]:
         shoulder = [landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER].x, landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER].y]
         elbow = [landmarks[mp_pose.PoseLandmark.LEFT_ELBOW].x, landmarks[mp_pose.PoseLandmark.LEFT_ELBOW].y]
         wrist = [landmarks[mp_pose.PoseLandmark.LEFT_WRIST].x, landmarks[mp_pose.PoseLandmark.LEFT_WRIST].y]
-        progress_left = smooth_progress(progress_curl_left_buffer, get_bicep_progress(shoulder, elbow, wrist))
 
-    # Проверяем завершение повторения (обе руки согнуты)
-    if progress_left >= 95 and progress_right >= 95:
+        angle = calculate_angle(shoulder, elbow, wrist)
+
+        # Обновленный прогресс
+        progress_left = np.clip(int(100 - (angle - MIN_ANGLE) * (100 / (MAX_ANGLE - MIN_ANGLE))), 0, 100)
+        smoothed_progress_left = smooth_left.update(progress_left)
+        draw_vertical_progress_bar(frame, smoothed_progress_left, frame.shape[1] - 50, 50)  # Слева
+
+    # Логика засчёта повтора
+    if progress_left >= 85 and progress_right >= 85:
         curl_completed = True
-    elif curl_completed and progress_left <= 15 and progress_right <= 15:  # Теперь 15%, а не 10%
+
+    if curl_completed and progress_left <= 15 and progress_right <= 15:
         curl_counter += 1
         curl_completed = False
+        play_beep()  # Звуковой сигнал
 
-    draw_vertical_progress_bar(frame, progress_left, frame.shape[1] - 50, 50)  # Слева
-    draw_vertical_progress_bar(frame, progress_right, 30, 50)  # Справа
-
-    # Рисуем счетчик повторов
+    # Отображаем счётчик по центру сверху
     draw_counter(frame, curl_counter, frame.shape[1] // 2 - 50, 50)
-
 
 def track_lateral_raises(frame, landmarks):
     """Отслеживание махов гантелями (lateral raises)."""
@@ -155,6 +193,7 @@ def track_lateral_raises(frame, landmarks):
     elif raise_completed and progress_left <= 15 and progress_right <= 15:  # Теперь 15%, а не 10%
         raise_counter += 1
         raise_completed = False
+        play_beep()
 
     # Рисуем прогресс-бары
     draw_vertical_progress_bar(frame, progress_left, frame.shape[1] - 50, 50)  # Слева
