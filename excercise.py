@@ -1,12 +1,35 @@
-from datetime import time
 import threading
 from playsound import playsound
 import cv2 as cv
 import numpy as np
 import mediapipe as mp
+import pygame
 from collections import deque
 import tkinter as tk
 from tkinter import simpledialog
+
+
+music_playing = False
+
+def toggle_music():
+    """Переключает фоновую музыку (включает/выключает)."""
+    global music_playing
+    if music_playing:
+        pygame.mixer.music.pause()
+    else:
+        pygame.mixer.music.unpause()
+    music_playing = not music_playing
+
+def play_music():
+    """Запускает фоновую музыку."""
+    pygame.mixer.init()
+    pygame.mixer.music.set_volume(0.3)
+    pygame.mixer.music.load("music/background.mp3")  # Укажи путь к файлу с музыкой
+    pygame.mixer.music.play(-1)  # -1 означает бесконечное повторение
+
+def stop_music():
+    """Останавливает фоновую музыку."""
+    pygame.mixer.music.stop()
 
 def play_beep():
     threading.Thread(target=playsound, args=("beep.mp3",), daemon=True).start()
@@ -79,6 +102,12 @@ def smooth_progress(buffer, new_value):
     buffer.append(new_value)
     return int(np.mean(buffer))
 
+def reset_counters():
+    global squat_counter, curl_counter, raise_counter
+    squat_counter = 0
+    curl_counter = 0
+    raise_counter = 0
+
 def draw_vertical_progress_bar(frame, progress, x, y, width=20, height=200):
     """Рисует вертикальный прогресс-бар."""
     cv.rectangle(frame, (x, y), (x + width, y + height), (255, 255, 255), 2)  # Граница
@@ -127,14 +156,15 @@ def track_squats(frame, landmarks):
     elif squat_completed and progress_left <= 15 and progress_right <= 15:
         squat_counter += 1
         squat_completed = False
-        play_beep()
+        if squat_counter == squat_goal:
+            play_goal_reached()
+        else:
+            play_beep()
 
     # Рисуем прогресс-бары
     draw_vertical_progress_bar(frame, progress_left, frame.shape[1] - 50, 50)  # Слева
     draw_vertical_progress_bar(frame, progress_right, 30, 50)  # Справа
     draw_counter(frame, squat_counter, frame.shape[1] // 2 - 50, 50)
-    if squat_counter == squat_goal:
-        play_goal_reached()
     draw_goal_counter(frame, squat_counter, squat_goal, frame.shape[1] // 2 - 50, 50)
 
 # Обновляем пределы углов для бицепсовых сгибаний
@@ -186,12 +216,13 @@ def track_bicep_curls(frame, landmarks):
     if curl_completed and progress_left <= 15 and progress_right <= 15:
         curl_counter += 1
         curl_completed = False
-        play_beep()  # Звуковой сигнал
+        if curl_counter == curl_goal:
+            play_goal_reached()
+        else:
+            play_beep() # Звуковой сигнал
 
     # Отображаем счётчик по центру сверху
     draw_counter(frame, curl_counter, frame.shape[1] // 2 - 50, 50)
-    if curl_counter == curl_goal:
-        play_goal_reached()
     draw_goal_counter(frame, curl_counter, curl_goal, frame.shape[1] // 2 - 50, 50)
 
 
@@ -229,7 +260,10 @@ def track_lateral_raises(frame, landmarks):
     elif raise_completed and progress_left <= 15 and progress_right <= 15:  # Теперь 15%, а не 10%
         raise_counter += 1
         raise_completed = False
-        play_beep()
+        if raise_counter == raise_goal:
+            play_goal_reached()
+        else:
+            play_beep()
 
     # Рисуем прогресс-бары
     draw_vertical_progress_bar(frame, progress_left, frame.shape[1] - 50, 50)  # Слева
@@ -237,6 +271,4 @@ def track_lateral_raises(frame, landmarks):
 
     # Рисуем счетчик повторов
     draw_counter(frame, raise_counter, frame.shape[1] // 2 - 50, 50)
-    if raise_counter == raise_goal:
-        play_goal_reached()
     draw_goal_counter(frame, raise_counter, raise_goal, frame.shape[1] // 2 - 50, 50)

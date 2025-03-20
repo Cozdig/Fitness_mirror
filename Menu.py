@@ -1,5 +1,3 @@
-from datetime import time
-
 import cv2 as cv
 import numpy as np
 import mediapipe as mp
@@ -9,7 +7,7 @@ from collections import deque
 import os
 import sys
 from PIL import Image, ImageDraw, ImageFont
-from excercise import track_lateral_raises, track_squats, track_bicep_curls
+from excercise import track_lateral_raises, track_squats, track_bicep_curls, reset_counters, play_music, stop_music, toggle_music
 
 # Инициализация MediaPipe
 mp_pose = mp.solutions.pose
@@ -90,6 +88,34 @@ class CameraHandler:
 camera = CameraHandler()
 
 
+def play_video(video_path):
+    """Воспроизводит видео-пример перед началом упражнения с возможностью паузы."""
+    cap = cv.VideoCapture(video_path)
+    if not cap.isOpened():
+        print(f"Ошибка: Не удалось открыть видео {video_path}")
+        return
+
+    paused = False  # Флаг паузы
+
+    while cap.isOpened():
+        if not paused:
+            ret, frame = cap.read()
+            if not ret:
+                break
+
+            cv.imshow("Видео-пример", frame)
+
+        key = cv.waitKey(30) & 0xFF
+
+        if key == ord('q'):  # Закрытие окна по 'q'
+            break
+        elif key == ord(' '):  # Пауза/возобновление по пробелу
+            paused = not paused
+
+    cap.release()
+    cv.destroyWindow("Видео-пример")
+
+
 def set_exercise(choice):
     """Функция выбора упражнения"""
     global selected_exercise, exit_to_menu, root
@@ -97,6 +123,11 @@ def set_exercise(choice):
         root.destroy()
 
     camera.close_camera()  # Закрываем камеру при возврате в меню
+    video_path = f"videos/{choice}.mp4"
+    if os.path.exists(video_path):
+        play_video(video_path)
+    reset_counters()
+    play_music()
     selected_exercise = EXERCISES.get(choice, None)
     exit_to_menu = False
 
@@ -170,14 +201,16 @@ while True:
             selected_exercise(frame, landmarks)
 
         # Добавляем текст в кадр
-        frame = draw_text(frame, "Нажмите M для меню", (20, frame.shape[0] - 40))
+        frame = draw_text(frame, "Нажмите M для меню | Нажмите T для остановки музыки", (20, frame.shape[0] - 40))
 
         cv.imshow("Pose", frame)
 
         key = cv.waitKey(1) & 0xFF
         if key == ord('m'):
+            stop_music()
             exit_to_menu = True
             selected_exercise = None
             break
-
+        elif key == ord('t'):  # Переключение музыки
+            toggle_music()
 camera.close_camera()
