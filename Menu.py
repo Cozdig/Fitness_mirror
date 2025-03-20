@@ -4,7 +4,6 @@ import os
 import sys
 from PIL import Image, ImageDraw, ImageFont
 import threading
-from playsound import playsound
 import cv2 as cv
 import numpy as np
 import mediapipe as mp
@@ -49,7 +48,11 @@ def stop_music():
     pygame.mixer.music.stop()
 
 def play_beep():
-    threading.Thread(target=playsound, args=(BEEP_PATH,), daemon=True).start()
+    def play_sound():
+        pygame.mixer.init()
+        pygame.mixer.Sound(BEEP_PATH).play()
+
+    threading.Thread(target=play_sound, daemon=True).start()
 
 
 # Функция для выбора цели по повторениям
@@ -62,7 +65,11 @@ root.destroy()
 
 # Функция для звукового сигнала при достижении цели
 def play_goal_reached():
-    threading.Thread(target=playsound, args=(GOAL_SOUND_PATH,), daemon=True).start()
+    def play_sound():
+        pygame.mixer.init()
+        pygame.mixer.Sound(GOAL_SOUND_PATH).play()
+
+    threading.Thread(target=play_sound, daemon=True).start()
 
 
 def draw_goal_counter(frame, count, goal, x, y):
@@ -418,14 +425,91 @@ def set_exercise(choice):
 
     camera.close_camera()  # Закрываем камеру при возврате в меню
     video_path = VIDEO_PATH_TEMPLATE.format(choice)  # Передаем путь правильно
-    play_video(video_path)
     if os.path.exists(video_path):
         play_video(video_path)
     reset_counters()
+
+    # Рекомендации по упражнениям
+    recommendations = {
+        "1": "💪 Держите локти рядом с корпусом, не разводите руки в стороны.",
+        "2": "⭐ Держите спину ровной и колени за носками.",
+        "3": "🏋 Махи делайте строго в стороны, контролируя движение."
+    }
+
+    recommendation_text = recommendations.get(choice, "Начинайте упражнение!")
+    show_recommendation(recommendation_text, 5)
+
+    # Открываем камеру только после отображения рекомендаций
     play_music()
     selected_exercise = EXERCISES.get(choice, None)
     exit_to_menu = False
+    camera.open_camera()
 
+
+def wrap_text(text, font, max_width, draw):
+    """Переносит текст на новую строку, если он превышает ширину."""
+    words = text.split(' ')
+    lines = []
+    current_line = ""
+
+    for word in words:
+        test_line = f"{current_line} {word}".strip()
+        bbox = draw.textbbox((0, 0), test_line, font=font)
+        width = bbox[2] - bbox[0]
+
+        if width <= max_width:
+            current_line = test_line
+        else:
+            lines.append(current_line)
+            current_line = word
+
+    lines.append(current_line)  # Добавляем последнюю строку
+    return lines
+
+
+def show_recommendation(text, duration=5):
+    """Отображает рекомендации в отдельном окне на указанное время (секунд)."""
+    recommendation_window_name = "Рекомендации"
+    start_time = time.time()
+
+    # Параметры для текста
+    frame_width, frame_height = 640, 480
+    font_path = "arial.ttf"
+    font_size = 24
+    max_text_width = 600  # Максимальная ширина для переноса текста
+
+    # Подготовка пустого фона для рекомендаций
+    frame = np.zeros((frame_height, frame_width, 3), dtype=np.uint8)
+    pil_image = Image.fromarray(cv.cvtColor(frame, cv.COLOR_BGR2RGB))
+    draw = ImageDraw.Draw(pil_image)
+
+    try:
+        font = ImageFont.truetype(font_path, font_size)
+    except IOError:
+        font = ImageFont.load_default()
+
+    # Перенос текста на новую строку при необходимости
+    lines = wrap_text(text, font, max_text_width, draw)
+
+    # Отображение текста по центру
+    y_offset = 200  # Начальная позиция текста
+    for line in lines:
+        bbox = draw.textbbox((0, 0), line, font=font)
+        text_width = bbox[2] - bbox[0]
+        text_height = bbox[3] - bbox[1]
+        x_offset = (frame_width - text_width) // 2  # Центрирование
+        draw.text((x_offset, y_offset), line, font=font, fill=(0, 255, 255))
+        y_offset += text_height + 5  # Добавляем отступ между строками
+
+    # Конвертируем изображение обратно в OpenCV и показываем
+    frame = cv.cvtColor(np.array(pil_image), cv.COLOR_RGB2BGR)
+
+    while time.time() - start_time < duration:
+        cv.imshow(recommendation_window_name, frame)
+        if cv.waitKey(1) & 0xFF == ord('q'):
+            break
+
+    cv.destroyWindow(recommendation_window_name)  # Закрываем окно рекомендаций
 
 def create_gui():
     """Создание графического интерфейса"""
