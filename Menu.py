@@ -170,7 +170,7 @@ while True:
             selected_exercise(frame, landmarks)
 
         # Добавляем текст в кадр
-        frame = draw_text(frame, "Нажмите M для меню | Q для выхода", (20, frame.shape[0] - 40))
+        frame = draw_text(frame, "Нажмите M для меню", (20, frame.shape[0] - 40))
 
         cv.imshow("Pose", frame)
 
@@ -179,7 +179,5 @@ while True:
             exit_to_menu = True
             selected_exercise = None
             break
-        elif key == ord('q'):
-            exit_application()
 
 camera.close_camera()

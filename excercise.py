@@ -11,7 +11,7 @@ def play_beep():
 
 # Фильтр для сглаживания прогресса (чтобы полоска не прыгала)
 class SmoothingFilter:
-    def __init__(self, alpha=0.2):
+    def __init__(self, alpha=0.1):
         self.alpha = alpha
         self.value = None
 
@@ -22,9 +22,6 @@ class SmoothingFilter:
             self.value = self.alpha * new_value + (1 - self.alpha) * self.value
         return int(self.value)
 
-# Создаём фильтры для сглаживания прогресс-бара
-smooth_left = SmoothingFilter(alpha=0.2)
-smooth_right = SmoothingFilter(alpha=0.2)
 
 # Инициализация MediaPipe для отслеживания позы
 mp_pose = mp.solutions.pose
@@ -132,7 +129,7 @@ def track_bicep_curls(frame, landmarks):
 
         # Обновленный прогресс: 100% при 70°, 0% при 160°
         progress_right = np.clip(int(100 - (angle - MIN_ANGLE) * (100 / (MAX_ANGLE - MIN_ANGLE))), 0, 100)
-        smoothed_progress_right = smooth_right.update(progress_right)
+        smoothed_progress_right = smooth_progress(progress_curl_right_buffer, progress_right)
         draw_vertical_progress_bar(frame, smoothed_progress_right, 30, 50)  # Справа
 
     # Левая рука
@@ -147,7 +144,7 @@ def track_bicep_curls(frame, landmarks):
 
         # Обновленный прогресс
         progress_left = np.clip(int(100 - (angle - MIN_ANGLE) * (100 / (MAX_ANGLE - MIN_ANGLE))), 0, 100)
-        smoothed_progress_left = smooth_left.update(progress_left)
+        smoothed_progress_left = smooth_progress(progress_curl_left_buffer, progress_left)
         draw_vertical_progress_bar(frame, smoothed_progress_left, frame.shape[1] - 50, 50)  # Слева
 
     # Логика засчёта повтора
