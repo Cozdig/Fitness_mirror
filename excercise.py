@@ -5,9 +5,30 @@ import cv2 as cv
 import numpy as np
 import mediapipe as mp
 from collections import deque
+import tkinter as tk
+from tkinter import simpledialog
 
 def play_beep():
     threading.Thread(target=playsound, args=("beep.mp3",), daemon=True).start()
+
+# Функция для выбора цели по повторениям
+root = tk.Tk()
+root.withdraw()  # Скрываем главное окно
+squat_goal = simpledialog.askinteger("Цель", "Введите количество повторений для приседаний", minvalue=1, maxvalue=100)
+curl_goal = simpledialog.askinteger("Цель", "Введите количество повторений для бицепса", minvalue=1, maxvalue=100)
+raise_goal = simpledialog.askinteger("Цель", "Введите количество повторений для махов", minvalue=1, maxvalue=100)
+root.destroy()
+
+# Функция для звукового сигнала при достижении цели
+def play_goal_reached():
+    threading.Thread(target=playsound, args=("goal_reached.mp3",), daemon=True).start()
+
+
+def draw_goal_counter(frame, count, goal, x, y):
+    """Рисует счетчик повторений с целью."""
+    text = f"Reps: {count}/{goal}"
+    cv.putText(frame, text, (x, y), cv.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 0), 4, cv.LINE_AA)  # Черная обводка
+    cv.putText(frame, text, (x, y), cv.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2, cv.LINE_AA)  # Белый текст
 
 # Фильтр для сглаживания прогресса (чтобы полоска не прыгала)
 class SmoothingFilter:
@@ -22,6 +43,9 @@ class SmoothingFilter:
             self.value = self.alpha * new_value + (1 - self.alpha) * self.value
         return int(self.value)
 
+# Создаём фильтры для сглаживания прогресс-бара
+smooth_left = SmoothingFilter(alpha=0.5)
+smooth_right = SmoothingFilter(alpha=0.5)
 
 # Инициализация MediaPipe для отслеживания позы
 mp_pose = mp.solutions.pose
@@ -69,7 +93,11 @@ def draw_counter(frame, count, x, y):
 
 def track_squats(frame, landmarks):
     """Отслеживание фронтальных приседаний с учетом обеих ног."""
-    global squat_counter, squat_completed
+    global squat_counter, squat_completed, squat_goal
+
+    if squat_counter >= squat_goal:
+        draw_goal_counter(frame, squat_counter, squat_goal, frame.shape[1] // 2 - 50, 50)
+        return
 
     def get_squat_progress(hip, knee, ankle):
         """Вычисляет прогресс приседаний на основе угла бедра относительно вертикали."""
@@ -105,7 +133,9 @@ def track_squats(frame, landmarks):
     draw_vertical_progress_bar(frame, progress_left, frame.shape[1] - 50, 50)  # Слева
     draw_vertical_progress_bar(frame, progress_right, 30, 50)  # Справа
     draw_counter(frame, squat_counter, frame.shape[1] // 2 - 50, 50)
-
+    if squat_counter == squat_goal:
+        play_goal_reached()
+    draw_goal_counter(frame, squat_counter, squat_goal, frame.shape[1] // 2 - 50, 50)
 
 # Обновляем пределы углов для бицепсовых сгибаний
 MIN_ANGLE = 70  # 100% прогресса
@@ -113,8 +143,10 @@ MAX_ANGLE = 160  # 0% прогресса
 
 def track_bicep_curls(frame, landmarks):
     """Отслеживание бицепсовых сгибаний с плавным прогресс-баром."""
-    global curl_counter, curl_completed
-
+    global curl_counter, curl_completed, curl_goal
+    if curl_counter >= curl_goal:
+        draw_goal_counter(frame, curl_counter, curl_goal, frame.shape[1] // 2 - 50, 50)
+        return
     progress_left, progress_right = 0, 0
 
     # Правая рука
@@ -129,7 +161,7 @@ def track_bicep_curls(frame, landmarks):
 
         # Обновленный прогресс: 100% при 70°, 0% при 160°
         progress_right = np.clip(int(100 - (angle - MIN_ANGLE) * (100 / (MAX_ANGLE - MIN_ANGLE))), 0, 100)
-        smoothed_progress_right = smooth_progress(progress_curl_right_buffer, progress_right)
+        smoothed_progress_right = smooth_right.update(progress_right)
         draw_vertical_progress_bar(frame, smoothed_progress_right, 30, 50)  # Справа
 
     # Левая рука
@@ -144,7 +176,7 @@ def track_bicep_curls(frame, landmarks):
 
         # Обновленный прогресс
         progress_left = np.clip(int(100 - (angle - MIN_ANGLE) * (100 / (MAX_ANGLE - MIN_ANGLE))), 0, 100)
-        smoothed_progress_left = smooth_progress(progress_curl_left_buffer, progress_left)
+        smoothed_progress_left = smooth_left.update(progress_left)
         draw_vertical_progress_bar(frame, smoothed_progress_left, frame.shape[1] - 50, 50)  # Слева
 
     # Логика засчёта повтора
@@ -158,10 +190,17 @@ def track_bicep_curls(frame, landmarks):
 
     # Отображаем счётчик по центру сверху
     draw_counter(frame, curl_counter, frame.shape[1] // 2 - 50, 50)
+    if curl_counter == curl_goal:
+        play_goal_reached()
+    draw_goal_counter(frame, curl_counter, curl_goal, frame.shape[1] // 2 - 50, 50)
+
 
 def track_lateral_raises(frame, landmarks):
     """Отслеживание махов гантелями (lateral raises)."""
-    global raise_counter, raise_completed
+    global raise_counter, raise_completed, raise_goal
+    if raise_counter >= raise_goal:
+        draw_goal_counter(frame, raise_counter, raise_goal, frame.shape[1] // 2 - 50, 50)
+        return
 
     def get_raise_progress(hip, shoulder, wrist):
         """Вычисляет прогресс махов на основе угла руки относительно корпуса."""
@@ -198,3 +237,6 @@ def track_lateral_raises(frame, landmarks):
 
     # Рисуем счетчик повторов
     draw_counter(frame, raise_counter, frame.shape[1] // 2 - 50, 50)
+    if raise_counter == raise_goal:
+        play_goal_reached()
+    draw_goal_counter(frame, raise_counter, raise_goal, frame.shape[1] // 2 - 50, 50)
